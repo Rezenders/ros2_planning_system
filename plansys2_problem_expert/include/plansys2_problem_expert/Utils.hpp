@@ -164,6 +164,11 @@ std::string get_action_name(const std::string & input);
  */
 std::vector<std::string> get_action_params(const std::string & action_expr);
 
+plansys2_msgs::msg::Tree replace_children_param(
+  const plansys2_msgs::msg::Tree & tree,
+  const uint8_t & node_id,
+  const std::map<std::string, std::string> & replace);
+
 }  // namespace plansys2
 
 #endif  // PLANSYS2_PROBLEM_EXPERT__UTILS_HPP_
