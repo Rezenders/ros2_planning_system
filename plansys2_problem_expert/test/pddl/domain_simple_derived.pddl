@@ -21,6 +21,7 @@ room_with_teleporter - room
 (is_teleporter_destination ?r - room)
 (inferred-robot_at ?r - robot ?ro - room)
 (inferred-person_at ?p - person ?ro - room)
+(inferred-not_same_person ?p1 ?p2 - person)
 );; end Predicates ;;;;;;;;;;;;;;;;;;;;
 ;; Functions ;;;;;;;;;;;;;;;;;;;;;;;;;
 (:functions
@@ -36,6 +37,11 @@ room_with_teleporter - room
 (:derived (inferred-person_at ?p - person ?ro - room)
   (and
     (person_at ?p ?ro)
+  )
+)
+(:derived (inferred-not_same_person ?p1 ?p2 - person)
+  (and
+    (not (= ?p1 ?p2))
   )
 )
 
