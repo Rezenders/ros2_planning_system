@@ -1338,5 +1338,13 @@ bool empty(const plansys2_msgs::msg::Tree & tree)
   return false;
 }
 
+bool checkParamTypeEquivalence(
+  const plansys2_msgs::msg::Param & first, const plansys2_msgs::msg::Param & second)
+{
+  return first.type == "" || first.type == "object" || first.type == second.type ||
+    std::find(
+      first.sub_types.begin(), first.sub_types.end(), second.type) != first.sub_types.end();
+}
+
 }  // namespace pddl
 }  // namespace parser

@@ -174,6 +174,10 @@ bool checkParamEquality(
 
 bool empty(const plansys2_msgs::msg::Tree & tree);
 
+// Check if type of second is equal or a subtype of first
+bool checkParamTypeEquivalence(
+  const plansys2_msgs::msg::Param & first, const plansys2_msgs::msg::Param & second);
+
 }  // namespace pddl
 }  // namespace parser
 
