@@ -50,12 +50,12 @@ class ProblemExpertClient : public ProblemExpertInterface
 public:
   ProblemExpertClient();
 
-  std::vector<plansys2::Instance> getInstances();
+  std::unordered_set<plansys2::Instance> getInstances();
   bool addInstance(const plansys2::Instance & instance);
   bool removeInstance(const plansys2::Instance & instance);
   std::optional<plansys2::Instance> getInstance(const std::string & name);
 
-  std::vector<plansys2::Predicate> getPredicates();
+  std::unordered_set<plansys2::Predicate> getPredicates();
   bool addPredicate(const plansys2::Predicate & predicate);
   bool removePredicate(const plansys2::Predicate & predicate);
   bool existPredicate(const plansys2::Predicate & predicate);

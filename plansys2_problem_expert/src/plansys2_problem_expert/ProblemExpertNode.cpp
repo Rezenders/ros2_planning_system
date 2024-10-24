@@ -466,7 +466,7 @@ ProblemExpertNode::get_problem_instances_service_callback(
     RCLCPP_WARN(get_logger(), "Requesting service in non-active state");
   } else {
     response->success = true;
-    response->instances = plansys2::convertVector<plansys2_msgs::msg::Param, plansys2::Instance>(
+    response->instances = plansys2::convertUnorderedSetToVector<plansys2_msgs::msg::Param, plansys2::Instance>(
       problem_expert_->getInstances());
   }
 }
@@ -505,7 +505,7 @@ ProblemExpertNode::get_problem_predicates_service_callback(
     RCLCPP_WARN(get_logger(), "Requesting service in non-active state");
   } else {
     response->success = true;
-    response->states = plansys2::convertVector<plansys2_msgs::msg::Node, plansys2::Predicate>(
+    response->states = plansys2::convertUnorderedSetToVector<plansys2_msgs::msg::Node, plansys2::Predicate>(
       problem_expert_->getPredicates());
   }
 }

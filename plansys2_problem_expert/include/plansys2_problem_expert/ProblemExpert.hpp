@@ -36,12 +36,19 @@ class ProblemExpert : public ProblemExpertInterface
 public:
   explicit ProblemExpert(std::shared_ptr<DomainExpert> & domain_expert);
 
-  std::vector<plansys2::Instance> getInstances();
+  std::unordered_set<plansys2::Instance> getInstances();
   bool addInstance(const plansys2::Instance & instance);
   bool removeInstance(const plansys2::Instance & instance);
   std::optional<plansys2::Instance> getInstance(const std::string & name);
 
-  std::vector<plansys2::Predicate> getPredicates();
+  void groundPredicate(
+    std::unordered_set<plansys2::Predicate>& current_predicates,
+    const plansys2::Predicate& predicate,
+    const std::vector<std::map<std::string, std::string>>& params_values_vector);
+  std::unordered_set<plansys2::Predicate> solveDerivedPredicates(std::unordered_set<plansys2::Predicate>& predicates);
+  std::unordered_set<plansys2::Predicate> solveAllDerivedPredicates(const std::unordered_set<plansys2::Predicate>& predicates);
+
+  std::unordered_set<plansys2::Predicate> getPredicates();
   bool addPredicate(const plansys2::Predicate & predicate);
   bool removePredicate(const plansys2::Predicate & predicate);
   bool existPredicate(const plansys2::Predicate & predicate);
@@ -77,15 +84,15 @@ private:
     uint8_t node_id = 0);
 
   void removeInvalidPredicates(
-    std::vector<plansys2::Predicate> & predicates,
+    std::unordered_set<plansys2::Predicate> & predicates,
     const plansys2::Instance & instance);
   void removeInvalidFunctions(
     std::vector<plansys2::Function> & functions,
     const plansys2::Instance & instance);
   void removeInvalidGoals(const plansys2::Instance & instance);
 
-  std::vector<plansys2::Instance> instances_;
-  std::vector<plansys2::Predicate> predicates_;
+  std::unordered_set<plansys2::Instance> instances_;
+  std::unordered_set<plansys2::Predicate> predicates_;
   std::vector<plansys2::Function> functions_;
   plansys2::Goal goal_;
 

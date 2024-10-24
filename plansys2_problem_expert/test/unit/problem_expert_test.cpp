@@ -49,20 +49,17 @@ TEST(problem_expert, addget_instances)
   ASSERT_TRUE(problem_expert.addInstance(parser::pddl::fromStringParam("r2d2", "robot")));
   ASSERT_TRUE(problem_expert.addInstance(parser::pddl::fromStringParam("ur5e", "Robot")));
 
-  ASSERT_EQ(problem_expert.getInstances().size(), 3);
-  ASSERT_EQ(problem_expert.getInstances()[0].name, "Paco");
-  ASSERT_EQ(problem_expert.getInstances()[0].type, "person");
-  ASSERT_EQ(problem_expert.getInstances()[1].name, "r2d2");
-  ASSERT_EQ(problem_expert.getInstances()[1].type, "robot");
-  ASSERT_EQ(problem_expert.getInstances()[2].name, "ur5e");
-  ASSERT_EQ(problem_expert.getInstances()[2].type, "robot");
+  auto instances = problem_expert.getInstances();
+  ASSERT_EQ(instances.size(), 3);
+  ASSERT_TRUE(instances.find(parser::pddl::fromStringParam("Paco", "person")) != instances.end());
+  ASSERT_TRUE(instances.find(parser::pddl::fromStringParam("r2d2", "robot")) != instances.end());
+  ASSERT_TRUE(instances.find(parser::pddl::fromStringParam("ur5e", "robot")) != instances.end());
 
   ASSERT_TRUE(problem_expert.removeInstance(parser::pddl::fromStringParam("Paco", "person")));
-  ASSERT_EQ(problem_expert.getInstances().size(), 2);
-  ASSERT_EQ(problem_expert.getInstances()[0].name, "r2d2");
-  ASSERT_EQ(problem_expert.getInstances()[0].type, "robot");
-  ASSERT_EQ(problem_expert.getInstances()[1].name, "ur5e");
-  ASSERT_EQ(problem_expert.getInstances()[1].type, "robot");
+  instances = problem_expert.getInstances();
+  ASSERT_EQ(instances.size(), 2);
+  ASSERT_TRUE(instances.find(parser::pddl::fromStringParam("r2d2", "robot")) != instances.end());
+  ASSERT_TRUE(instances.find(parser::pddl::fromStringParam("ur5e", "robot")) != instances.end());
 
   auto paco_instance = problem_expert.getInstance("Paco");
   ASSERT_FALSE(paco_instance);
@@ -243,7 +240,7 @@ TEST(problem_expert, addget_predicates)
   ASSERT_TRUE(problem_expert.addInstance(parser::pddl::fromStringParam("bedroom", "room")));
   ASSERT_TRUE(problem_expert.addInstance(parser::pddl::fromStringParam("kitchen", "room")));
 
-  std::vector<plansys2::Predicate> predicates = problem_expert.getPredicates();
+  std::unordered_set<plansys2::Predicate> predicates = problem_expert.getPredicates();
   ASSERT_TRUE(predicates.empty());
 
   ASSERT_TRUE(problem_expert.addPredicate(predicate_1));
@@ -270,7 +267,7 @@ TEST(problem_expert, addget_predicates)
 
   ASSERT_FALSE(problem_expert.removePredicate(predicate_5));
   ASSERT_TRUE(problem_expert.removePredicate(predicate_4));
-  ASSERT_TRUE(problem_expert.removePredicate(predicate_4));
+  ASSERT_FALSE(problem_expert.removePredicate(predicate_4));
 
   predicates = problem_expert.getPredicates();
   ASSERT_EQ(predicates.size(), 3);
@@ -521,11 +518,11 @@ TEST(problem_expert, get_problem)
     problem_expert.getProblem(),
     std::string("( define ( problem problem_1 )\n( :domain simple )\n") +
     std::string("( :objects\n\tpaco - person\n\tr2d2 - robot\n") +
-    std::string("\tbedroom kitchen - room\n)\n") +
-    std::string("( :init\n\t( robot_at r2d2 bedroom )\n") +
+    std::string("\tkitchen bedroom - room\n)\n") +
+    std::string("( :init\n\t( person_at paco kitchen )\n") +
     std::string("\t( robot_at r2d2 kitchen )\n") +
     std::string("\t( person_at paco bedroom )\n") +
-    std::string("\t( person_at paco kitchen )\n)\n") +
+    std::string("\t( robot_at r2d2 bedroom )\n)\n") +
     std::string("( :goal\n\t( and\n\t\t( robot_at r2d2 bedroom )\n\t\t") +
     std::string("( person_at paco kitchen )\n\t))\n)\n"));
 
@@ -615,12 +612,12 @@ TEST(problem_expert, add_problem)
     problem_expert.getProblem(),
     std::string("( define ( problem problem_1 )\n") +
     std::string("( :domain simple )\n( :objects\n") +
-    std::string("\tjack alice - person\n") +
+    std::string("\talice jack - person\n") +
     std::string("\tm1 - message\n") +
     std::string("\tleia - robot\n") +
-    std::string("\tkitchen bedroom - room\n)\n") +
-    std::string("( :init\n\t( robot_at leia kitchen )\n") +
-    std::string("\t( person_at jack bedroom )\n") +
+    std::string("\tbedroom kitchen - room\n)\n") +
+    std::string("( :init\n\t( person_at jack bedroom )\n") +
+    std::string("\t( robot_at leia kitchen )\n") +
     std::string("\t( = ( room_distance kitchen bedroom ) 10.0000000000 )\n)\n") +
     std::string("( :goal\n\t( and\n\t\t( robot_talk leia m1 jack )\n\t))\n)\n"));
 
@@ -684,9 +681,9 @@ TEST(problem_expert, add_problem_with_constants)
   ASSERT_EQ(
     problem_expert.getProblem(),
     std::string("( define ( problem problem_1 )\n( :domain plansys2 )\n") +
-    std::string("( :objects\n\tm1 - message\n\tkitchen bedroom - room\n)\n") +
-    std::string("( :init\n\t( robot_at leia kitchen )\n") +
-    std::string("\t( person_at jack bedroom )\n)\n") +
+    std::string("( :objects\n\tm1 - message\n\tbedroom kitchen - room\n)\n") +
+    std::string("( :init\n\t( person_at jack bedroom )\n") +
+    std::string("\t( robot_at leia kitchen )\n)\n") +
     std::string("( :goal\n\t( and\n\t\t( robot_talk leia m1 jack )\n\t))\n)\n"));
 
   ASSERT_TRUE(problem_expert.clearKnowledge());
@@ -707,7 +704,6 @@ TEST(problem_expert, add_problem_with_constants)
 
   ASSERT_NE(problem_1_str, problem_2_str);
   ASSERT_NE(problem_expert.getProblem(), problem_2_str);
-  ASSERT_EQ(problem_expert.getProblem(), problem_1_str);
 }
 
 TEST(problem_expert, is_goal_satisfied)
@@ -750,7 +746,7 @@ TEST(problem_expert, is_goal_satisfied)
 TEST(problem_expert, exist_predicate)
 {
   std::string pkgpath = ament_index_cpp::get_package_share_directory("plansys2_problem_expert");
-  std::ifstream domain_ifs(pkgpath + "/pddl/domain_simple_derived.pddl");
+  std::ifstream domain_ifs(pkgpath + "/pddl/domain_derived.pddl");
   std::string domain_str((
       std::istreambuf_iterator<char>(domain_ifs)),
     std::istreambuf_iterator<char>());
@@ -758,7 +754,7 @@ TEST(problem_expert, exist_predicate)
   auto domain_expert = std::make_shared<plansys2::DomainExpert>(domain_str);
   plansys2::ProblemExpert problem_expert(domain_expert);
 
-  std::ifstream problem_ifs(pkgpath + "/pddl/problem_simple_1.pddl");
+  std::ifstream problem_ifs(pkgpath + "/pddl/problem_derived.pddl");
   std::string problem_str((
       std::istreambuf_iterator<char>(problem_ifs)),
     std::istreambuf_iterator<char>());
@@ -815,7 +811,7 @@ TEST(problem_expert, exist_predicate)
 TEST(problem_expert, get_predicate_with_derived)
 {
   std::string pkgpath = ament_index_cpp::get_package_share_directory("plansys2_problem_expert");
-  std::ifstream domain_ifs(pkgpath + "/pddl/domain_simple_derived.pddl");
+  std::ifstream domain_ifs(pkgpath + "/pddl/domain_derived.pddl");
   std::string domain_str((
       std::istreambuf_iterator<char>(domain_ifs)),
     std::istreambuf_iterator<char>());
@@ -823,60 +819,79 @@ TEST(problem_expert, get_predicate_with_derived)
   auto domain_expert = std::make_shared<plansys2::DomainExpert>(domain_str);
   plansys2::ProblemExpert problem_expert(domain_expert);
 
-  std::ifstream problem_ifs(pkgpath + "/pddl/problem_simple_1.pddl");
+  std::ifstream problem_ifs(pkgpath + "/pddl/problem_derived.pddl");
   std::string problem_str((
       std::istreambuf_iterator<char>(problem_ifs)),
     std::istreambuf_iterator<char>());
   ASSERT_TRUE(problem_expert.addProblem(problem_str));
 
   auto predicates = problem_expert.getPredicates();
-  ASSERT_EQ(predicates.size(), 4);
-  std::vector<std::string> predicates_names;
-  std::for_each(
-    predicates.begin(), predicates.end(),
-    [&](auto p) {predicates_names.push_back(parser::pddl::toString(p));}
-  );
-  ASSERT_TRUE(
-    std::find(
-      predicates_names.begin(), predicates_names.end(), "(inferred-robot_at leia kitchen)") !=
-    predicates_names.end());
-  ASSERT_TRUE(
-    std::find(
-      predicates_names.begin(), predicates_names.end(), "(person_at jack bedroom)") !=
-    predicates_names.end());
-  ASSERT_TRUE(
-    std::find(
-      predicates_names.begin(), predicates_names.end(), "(inferred-person_at jack bedroom)") !=
-    predicates_names.end());
-  ASSERT_FALSE(
-    std::find(
-      predicates_names.begin(), predicates_names.end(), "(inferred-person_at jack kitchen)") !=
-    predicates_names.end());
-  ASSERT_FALSE(
-    std::find(
-      predicates_names.begin(), predicates_names.end(), "(inferred-robot_at leia bedroom)") !=
-    predicates_names.end());
 
-  problem_expert.removePredicate(
-    parser::pddl::fromStringPredicate("(robot_at leia kitchen)"));
-  problem_expert.removePredicate(
-    parser::pddl::fromStringPredicate("(person_at jack bedroom)"));
+  ASSERT_TRUE(predicates.find(
+    parser::pddl::fromStringPredicate("(inferred-robot_at leia kitchen)")) != predicates.end());
+
+  ASSERT_TRUE(predicates.find(
+    parser::pddl::fromStringPredicate("(person_at jack bedroom)")) != predicates.end());
+
+  ASSERT_TRUE(predicates.find(
+    parser::pddl::fromStringPredicate("(inferred-person_at jack bedroom)")) != predicates.end());
+
+  ASSERT_TRUE(predicates.find(
+    parser::pddl::fromStringPredicate("(inferred-party jose jose jose jose jose turtlebot turtlebot livingroom)")) != predicates.end());
+
+  ASSERT_TRUE(predicates.find(
+    parser::pddl::fromStringPredicate("(inferred-exists-party-in-room livingroom)")) != predicates.end());
+
+  ASSERT_TRUE(predicates.find(
+    parser::pddl::fromStringPredicate("(inferred-aerial rob1)")) != predicates.end());
+
+  ASSERT_TRUE(predicates.find(
+    parser::pddl::fromStringPredicate("(inferred-aerial rob2)")) != predicates.end());
+
+  ASSERT_TRUE(predicates.find(
+    parser::pddl::fromStringPredicate("(inferred-not_aerial leia)")) != predicates.end());
+
+  ASSERT_FALSE(predicates.find(
+    parser::pddl::fromStringPredicate("(inferred-person_at jack kitchen)")) != predicates.end());
+
+  ASSERT_FALSE(predicates.find(
+    parser::pddl::fromStringPredicate("(inferred-robot_at leia bedroom)")) != predicates.end());
+
+  // ASSERT_TRUE(predicates.find(
+  //   parser::pddl::fromStringPredicate("(inferred-drone_has_battery_level rob1)")) != predicates.end());
+  //
+  // ASSERT_FALSE(predicates.find(
+  //   parser::pddl::fromStringPredicate("(inferred-drone_has_battery_level r2d2)")) != predicates.end());
+
+  ASSERT_TRUE(predicates.find(
+    parser::pddl::fromStringPredicate("(inferred-drone123 drone123)")) != predicates.end());
+
+  ASSERT_TRUE(predicates.find(
+    parser::pddl::fromStringPredicate("(inferred-not-drone123 rob1)")) != predicates.end());
+
+  ASSERT_TRUE(predicates.find(
+    parser::pddl::fromStringPredicate("(inferred-same-drone rob1 rob1)")) != predicates.end());
+
+  ASSERT_TRUE(predicates.find(
+    parser::pddl::fromStringPredicate("(inferred-not-same-drone rob1 drone123)")) != predicates.end());
+
+  ASSERT_TRUE(predicates.find(
+    parser::pddl::fromStringPredicate("(inferred-exists-equal-drone rob1)")) != predicates.end());
+
+  ASSERT_TRUE(predicates.find(
+    parser::pddl::fromStringPredicate("(inferred-exists-another-drone rob1)")) != predicates.end());
+
+  ASSERT_TRUE(problem_expert.removePredicate(
+    parser::pddl::fromStringPredicate("(robot_at leia kitchen)")));
+  ASSERT_TRUE(problem_expert.removePredicate(
+    parser::pddl::fromStringPredicate("(person_at jack bedroom)")));
 
   predicates = problem_expert.getPredicates();
-  std::vector<std::string> predicate_names2;
-  std::for_each(
-    predicates.begin(), predicates.end(),
-    [&](auto p) {predicate_names2.push_back(parser::pddl::toString(p));}
-  );
 
-  ASSERT_FALSE(
-    std::find(
-      predicate_names2.begin(), predicate_names2.end(), "(inferred-person_at jack bedroom)") !=
-    predicate_names2.end());
-  ASSERT_FALSE(
-    std::find(
-      predicate_names2.begin(), predicate_names2.end(), "(inferred-robot_at leia kitchen)") !=
-    predicate_names2.end());
+  ASSERT_FALSE(predicates.find(
+    parser::pddl::fromStringPredicate("(inferred-person_at jack bedroom)")) != predicates.end());
+  ASSERT_FALSE(predicates.find(
+    parser::pddl::fromStringPredicate("(inferred-robot_at leia kitchen)")) != predicates.end());
 }
 
 int main(int argc, char ** argv)

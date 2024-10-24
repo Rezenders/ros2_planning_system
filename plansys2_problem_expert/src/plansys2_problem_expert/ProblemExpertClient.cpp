@@ -85,7 +85,7 @@ ProblemExpertClient::ProblemExpertClient()
     "problem_expert/is_problem_goal_satisfied");
 }
 
-std::vector<plansys2::Instance>
+std::unordered_set<plansys2::Instance>
 ProblemExpertClient::getInstances()
 {
   while (!get_problem_instances_client_->wait_for_service(std::chrono::seconds(5))) {
@@ -111,7 +111,7 @@ ProblemExpertClient::getInstances()
   auto result = *future_result.get();
 
   if (result.success) {
-    return plansys2::convertVector<plansys2::Instance, plansys2_msgs::msg::Param>(
+    return plansys2::convertVectorToUnorderedSet<plansys2::Instance, plansys2_msgs::msg::Param>(
       result.instances);
   } else {
     RCLCPP_ERROR_STREAM(
@@ -238,7 +238,7 @@ ProblemExpertClient::getInstance(const std::string & name)
   }
 }
 
-std::vector<plansys2::Predicate>
+std::unordered_set<plansys2::Predicate>
 ProblemExpertClient::getPredicates()
 {
   while (!get_problem_predicates_client_->wait_for_service(std::chrono::seconds(5))) {
@@ -264,7 +264,7 @@ ProblemExpertClient::getPredicates()
   auto result = *future_result.get();
 
   if (result.success) {
-    return plansys2::convertVector<plansys2::Predicate, plansys2_msgs::msg::Node>(
+    return plansys2::convertVectorToUnorderedSet<plansys2::Predicate, plansys2_msgs::msg::Node>(
       result.states);
   } else {
     RCLCPP_ERROR_STREAM(

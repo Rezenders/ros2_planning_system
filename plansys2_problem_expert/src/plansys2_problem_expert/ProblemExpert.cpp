@@ -22,6 +22,7 @@
 #include <memory>
 #include <set>
 #include <map>
+#include <omp.h>  // OpenMP for parallelization
 
 #include "plansys2_core/Utils.hpp"
 #include "plansys2_pddl_parser/Domain.hpp"
@@ -63,13 +64,13 @@ ProblemExpert::addInstance(const plansys2::Instance & instance)
   }
 
   if (!exist_instance) {
-    instances_.push_back(lowercase_instance);
+    instances_.insert(lowercase_instance);
   }
 
   return true;
 }
 
-std::vector<plansys2::Instance>
+std::unordered_set<plansys2::Instance>
 ProblemExpert::getInstances()
 {
   return instances_;
@@ -78,95 +79,142 @@ ProblemExpert::getInstances()
 bool
 ProblemExpert::removeInstance(const plansys2::Instance & instance)
 {
-  bool found = false;
-  int i = 0;
-
-  while (!found && i < instances_.size()) {
-    if (instances_[i].name == instance.name) {
-      found = true;
-      instances_.erase(instances_.begin() + i);
-    }
-    i++;
-  }
-
+  auto res = instances_.erase(instance);
   removeInvalidPredicates(predicates_, instance);
   removeInvalidFunctions(functions_, instance);
   removeInvalidGoals(instance);
 
-  return found;
+  return res == 1;
 }
 
 std::optional<plansys2::Instance>
 ProblemExpert::getInstance(const std::string & instance_name)
 {
-  plansys2::Instance ret;
+  auto instance = parser::pddl::fromStringParam(instance_name);
+  auto it = instances_.find(instance);
+  if ( it != instances_.end()) {
+    return *it;
+  }
+  return {};
+}
 
-  bool found = false;
-  int i = 0;
-  while (i < instances_.size() && !found) {
-    if (instances_[i].name == instance_name) {
-      found = true;
-      ret = instances_[i];
+void ProblemExpert::groundPredicate(
+  std::unordered_set<plansys2::Predicate>& current_predicates,
+  const plansys2::Predicate& predicate,
+  const std::vector<std::map<std::string, std::string>>& params_values_vector)
+{
+  size_t num_params = predicate.parameters.size();
+  size_t params_values_size = params_values_vector.size();
+
+  current_predicates.reserve(current_predicates.size() + params_values_size);
+
+  // Declare a thread-local unordered_set to hold predicates created by each thread
+  std::vector<std::unordered_set<plansys2::Predicate>> thread_local_sets(omp_get_max_threads());
+
+  // Parallelize the outer loop
+  #pragma omp parallel
+  {
+    size_t thread_id = omp_get_thread_num();
+    auto& local_set = thread_local_sets[thread_id];
+
+    local_set.reserve(params_values_size / omp_get_num_threads());
+
+    #pragma omp for schedule(dynamic)
+    for (size_t j = 0; j < params_values_size; ++j) {
+      const auto& params_values = params_values_vector[j];
+      plansys2::Predicate new_predicate;
+      new_predicate.node_type = plansys2_msgs::msg::Node::PREDICATE;
+      new_predicate.name = predicate.name;
+      new_predicate.parameters.reserve(num_params);
+      bool add_predicate = true;
+
+      for (size_t i = 0; i < num_params; ++i) {
+        plansys2_msgs::msg::Param new_param = predicate.parameters[i];
+
+        // Only perform lookup and assignment if the parameter is a variable (starts with '?')
+        if (new_param.name.front() == '?') {
+          auto it = params_values.find("?" + std::to_string(i));
+          if (it != params_values.end()) {
+            auto instance = getInstance(it->second);
+            if (!instance.has_value() || !parser::pddl::checkParamTypeEquivalence(new_param, instance.value())) {
+              add_predicate = false;
+              break;
+            }
+            new_param.name = it->second;
+          }
+        }
+        new_predicate.parameters.emplace_back(std::move(new_param));
+      }
+
+      // Insert the new_predicate into the thread-local set
+      if (add_predicate) {
+        local_set.emplace(std::move(new_predicate));
+      }
     }
-    i++;
   }
 
-  if (found) {
-    return ret;
-  } else {
-    return {};
+  // Merge all thread-local sets into the main set (current_predicates)
+  for (const auto& local_set : thread_local_sets) {
+    current_predicates.insert(local_set.begin(), local_set.end());
   }
 }
 
-std::vector<plansys2::Predicate>
-ProblemExpert::getPredicates()
+std::unordered_set<plansys2::Predicate>
+ProblemExpert::solveDerivedPredicates(std::unordered_set<plansys2::Predicate>& predicates)
 {
-  std::vector<plansys2::Predicate> ret = predicates_;
+  std::unordered_set<plansys2::Predicate> inferred_predicates = predicates;
 
-  auto derived_predicates = domain_expert_->getDerivedPredicates();
-  for (auto derived_name : derived_predicates) {
-    auto derived = domain_expert_->getDerivedPredicate(derived_name.name);
-    for (auto d : derived) {
-      std::vector<std::vector<std::string>> parameters_vector;
-      for (size_t i = 0; i < d.predicate.parameters.size(); i++) {
-        std::vector<std::string> p_vector;
-        std::for_each(
-          instances_.begin(), instances_.end(),
-          [&](auto instance) {
-            if (d.predicate.parameters[i].type == instance.type) {
-              p_vector.push_back(instance.name);
-            }
-          });
-        parameters_vector.push_back(p_vector);
-      }
-      std::vector<std::vector<std::string>> possible_parameters_values;
-      std::vector<std::string> aux;
-      plansys2::cart_product(
-        possible_parameters_values, aux, parameters_vector.begin(), parameters_vector.end());
+  const std::vector<plansys2::Predicate> & derived_predicates =
+    domain_expert_->getDerivedPredicates();
 
-      for (auto parameters_values : possible_parameters_values) {
-        std::map<std::string, std::string> replace;
-        for (size_t i = 0; i < d.predicate.parameters.size(); i++) {
-          replace["?" + std::to_string(i)] = parameters_values[i];
-        }
-        auto tree_replaced = plansys2::replace_children_param(
-          d.preconditions, d.preconditions.nodes[0].node_id, replace);
-        bool result = check(tree_replaced, predicates_, functions_);
-        if (result) {
-          plansys2::Predicate inferred_predicate;
-          inferred_predicate.node_type = plansys2_msgs::msg::Node::PREDICATE;
-          inferred_predicate.name = d.predicate.name;
-          for (size_t i = 0; i < d.predicate.parameters.size(); i++) {
-            plansys2_msgs::msg::Param param;
-            param.name = replace.at("?" + std::to_string(i));
-            inferred_predicate.parameters.push_back(param);
-          }
-          ret.push_back(inferred_predicate);
-        }
+  inferred_predicates.reserve(inferred_predicates.size() + derived_predicates.size());
+
+  std::unordered_map<std::string, std::vector<plansys2_msgs::msg::Derived>> derived_cache;
+  for (const plansys2::Predicate & derived_name : derived_predicates) {
+
+    if (derived_cache.find(derived_name.name) != derived_cache.end()) {
+      continue;
+    }
+    derived_cache[derived_name.name] = domain_expert_->getDerivedPredicate(derived_name.name);
+    const auto& derived = derived_cache[derived_name.name];
+    for (const plansys2_msgs::msg::Derived & d : derived) {
+      std::shared_ptr<plansys2::ProblemExpertClient> new_problem_client;
+
+      auto [_, evaluate_value, __, params_values] = evaluate(
+        d.preconditions,
+        new_problem_client,
+        instances_,
+        inferred_predicates,
+        functions_,
+        false,
+        true,
+        d.preconditions.nodes[0].node_id,
+        false);
+
+      if (evaluate_value && !params_values.empty()) {
+        groundPredicate(inferred_predicates, d.predicate, params_values);
       }
     }
   }
-  return ret;
+  return std::move(inferred_predicates);
+}
+
+std::unordered_set<plansys2::Predicate> ProblemExpert::solveAllDerivedPredicates(
+  const std::unordered_set<plansys2::Predicate>& predicates)
+{
+  std::unordered_set<plansys2::Predicate> current_predicates = predicates;
+  std::unordered_set<plansys2::Predicate> new_predicates = solveDerivedPredicates(current_predicates);
+  while (current_predicates != new_predicates){
+    std::swap(current_predicates, new_predicates);
+    new_predicates = solveDerivedPredicates(current_predicates);
+  }
+  return std::move(new_predicates);
+}
+
+std::unordered_set<plansys2::Predicate>
+ProblemExpert::getPredicates()
+{
+  return solveAllDerivedPredicates(predicates_);
 }
 
 bool
@@ -174,7 +222,7 @@ ProblemExpert::addPredicate(const plansys2::Predicate & predicate)
 {
   if (!existPredicate(predicate)) {
     if (isValidPredicate(predicate)) {
-      predicates_.push_back(predicate);
+      predicates_.emplace(predicate);
       return true;
     } else {
       return false;
@@ -187,44 +235,20 @@ ProblemExpert::addPredicate(const plansys2::Predicate & predicate)
 bool
 ProblemExpert::removePredicate(const plansys2::Predicate & predicate)
 {
-  bool found = false;
-  int i = 0;
-
   if (!isValidPredicate(predicate)) {  // if predicate is not valid, error
     return false;
   }
-  while (!found && i < predicates_.size()) {
-    if (parser::pddl::checkNodeEquality(predicates_[i], predicate)) {
-      found = true;
-      predicates_.erase(predicates_.begin() + i);
-    }
-    i++;
-  }
-
-  return true;
+  return predicates_.erase(predicate) == 1;
 }
 
 std::optional<plansys2::Predicate>
 ProblemExpert::getPredicate(const std::string & expr)
 {
-  plansys2::Predicate ret;
-  plansys2::Predicate pred = parser::pddl::fromStringPredicate(expr);
-
-  bool found = false;
-  size_t i = 0;
-  while (i < predicates_.size() && !found) {
-    if (parser::pddl::checkNodeEquality(predicates_[i], pred)) {
-      found = true;
-      ret = predicates_[i];
-    }
-    i++;
+  auto it = predicates_.find(parser::pddl::fromStringPredicate(expr));
+  if ( it != predicates_.end()) {
+    return *it;
   }
-
-  if (found) {
-    return ret;
-  } else {
-    return {};
-  }
+  return {};
 }
 
 std::vector<plansys2::Function>
@@ -307,19 +331,20 @@ ProblemExpert::getFunction(const std::string & expr)
   }
 }
 
-void
-ProblemExpert::removeInvalidPredicates(
-  std::vector<plansys2::Predicate> & predicates,
+void ProblemExpert::removeInvalidPredicates(
+  std::unordered_set<plansys2::Predicate> & predicates,
   const plansys2::Instance & instance)
 {
-  for (auto rit = predicates.rbegin(); rit != predicates.rend(); ++rit) {
+  for (auto it = predicates.begin(); it != predicates.end(); ) {
     if (std::find_if(
-        rit->parameters.begin(), rit->parameters.end(),
+        it->parameters.begin(), it->parameters.end(),
         [&](const plansys2_msgs::msg::Param & param) {
           return param.name == instance.name;
-        }) != rit->parameters.end())
+        }) != it->parameters.end())
     {
-      predicates.erase(std::next(rit).base());
+      it = predicates.erase(it);
+    } else {
+      ++it;
     }
   }
 }
@@ -429,7 +454,7 @@ ProblemExpert::setGoal(const plansys2::Goal & goal)
 
 bool ProblemExpert::isGoalSatisfied(const plansys2::Goal & goal)
 {
-  return check(goal, predicates_, functions_);
+  return check(goal, instances_, predicates_, functions_);
 }
 
 bool
@@ -467,32 +492,13 @@ ProblemExpert::isValidType(const std::string & type)
 bool
 ProblemExpert::existInstance(const std::string & name)
 {
-  bool found = false;
-  int i = 0;
-
-  while (!found && i < instances_.size()) {
-    if (instances_[i].name == name) {
-      found = true;
-    }
-    i++;
-  }
-
-  return found;
+  return instances_.find(parser::pddl::fromStringParam(name)) != instances_.end();
 }
 
 bool
 ProblemExpert::existPredicate(const plansys2::Predicate & predicate)
 {
-  bool found = false;
-  int i = 0;
-
-  while (!found && i < predicates_.size()) {
-    if (parser::pddl::checkNodeEquality(predicates_[i], predicate)) {
-      found = true;
-    }
-    i++;
-  }
-
+  bool found = predicates_.find(predicate) != predicates_.end();
   if (!found) {
     std::vector<std::string> parameters_names;
     std::for_each(
@@ -500,7 +506,7 @@ ProblemExpert::existPredicate(const plansys2::Predicate & predicate)
       [&](auto p) {parameters_names.push_back(p.name);});
     auto derived_predicates = domain_expert_->getDerivedPredicate(predicate.name, parameters_names);
     for (auto derived : derived_predicates) {
-      if (check(derived.preconditions, predicates_, functions_)) {
+      if (check(derived.preconditions, instances_, predicates_, functions_)) {
         found = true;
         break;
       }
