@@ -1311,7 +1311,7 @@ bool checkNodeEquality(
 bool checkParamEquality(
   const plansys2_msgs::msg::Param & first, const plansys2_msgs::msg::Param & second)
 {
-  if (first.name != second.name) {
+  if (first.name.front() != '?' && second.name.front() != '?' && first.name != second.name) {
     return false;
   }
 
