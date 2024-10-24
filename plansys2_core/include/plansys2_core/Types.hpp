@@ -36,6 +36,10 @@ public:
   : plansys2_msgs::msg::Param(parser::pddl::fromStringParam(name, type)) {}
   Instance(const plansys2_msgs::msg::Param & instance)  // NOLINT(runtime/explicit)
   : plansys2_msgs::msg::Param(instance) {}
+
+  bool operator==(const Instance& i2) const {
+    return parser::pddl::checkParamEquality(*this, i2);
+  }
 };
 
 class Predicate : public plansys2_msgs::msg::Node
@@ -47,6 +51,10 @@ public:
   : plansys2_msgs::msg::Node(parser::pddl::fromStringPredicate(pred)) {}
   Predicate(const plansys2_msgs::msg::Node & pred)  // NOLINT(runtime/explicit)
   : plansys2_msgs::msg::Node(pred) {}
+
+  bool operator==(const Predicate& p2) const {
+    return parser::pddl::checkNodeEquality(*this, p2);
+  }
 };
 
 class Function : public plansys2_msgs::msg::Node
@@ -82,6 +90,53 @@ convertVector(const std::vector<fromT> & in_vector)
   return ret;
 }
 
+template<class toT, class fromT>
+std::unordered_set<toT>
+convertVectorToUnorderedSet(const std::vector<fromT> & in_vector)
+{
+  std::unordered_set<toT> ret;
+  for (const auto & item : in_vector) {
+    ret.insert(item);
+  }
+  return ret;
+}
+
+template<class toT, class fromT>
+std::vector<toT>
+convertUnorderedSetToVector(const std::unordered_set<fromT> & in_unordered_set)
+{
+  std::vector<toT> ret;
+  for (const auto & item : in_unordered_set) {
+    ret.push_back(item);
+  }
+  return ret;
+}
+
+
+
 }  // namespace plansys2
+
+namespace std {
+template <>
+struct hash<plansys2::Predicate> {
+  std::size_t operator()(const plansys2::Predicate& pred) const noexcept {
+    std::size_t h1 = std::hash<std::string>{}(pred.name);
+    std::size_t h2 = 0;
+
+    for (const auto& param : pred.parameters) {
+      h2 ^= std::hash<std::string>{}(param.name) + 0x9e3779b9 + (h2 << 6) + (h2 >> 2);
+    }
+
+    return h1 ^ h2;
+  }
+};
+
+template <>
+struct hash<plansys2::Instance> {
+  std::size_t operator()(const plansys2::Instance& inst) const noexcept {
+    return std::hash<std::string>{}(inst.name);
+  }
+};
+}
 
 #endif  // PLANSYS2_CORE__TYPES_HPP_
